@@ -32,3 +32,7 @@ Background
 - Then you can use this app
 - (if needed) setting file is located at `C:\Users\{username}\AppData\Local\ImageUtility\ImageUtility_Url_{random}\1.0.0.0\user.config`
   - setting file will be created after first launch.
+  
+  
+## TODO
+- Fix jpg compress percent not working if file extension is uppercase (.JPG)
