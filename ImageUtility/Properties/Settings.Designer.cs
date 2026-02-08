@@ -94,5 +94,29 @@ namespace ImageUtility.Properties {
                 this["ResizeShorterSideToPx"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("80")]
+        public int JpgCompressionQualityPercent {
+            get {
+                return ((int)(this["JpgCompressionQualityPercent"]));
+            }
+            set {
+                this["JpgCompressionQualityPercent"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool IsEnableJpgCompression {
+            get {
+                return ((bool)(this["IsEnableJpgCompression"]));
+            }
+            set {
+                this["IsEnableJpgCompression"] = value;
+            }
+        }
     }
 }

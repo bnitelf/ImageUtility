@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -43,6 +44,9 @@ namespace ImageUtility
             // Set TextBoxes
             txtResizePercentList.Text = Properties.Settings.Default.PercentList;
             txtResizeShorterSide.Text = Properties.Settings.Default.ResizeShorterSideToPx.ToString();
+
+            chkJpgCompressionPercent.IsChecked = Properties.Settings.Default.IsEnableJpgCompression;
+            txtJpgCompressionPercent.Text = Properties.Settings.Default.JpgCompressionQualityPercent.ToString();
         }
 
         private void BorderDropArea_DragEnter(object sender, DragEventArgs e)
@@ -65,38 +69,68 @@ namespace ImageUtility
                 bool hasError = false;
                 int numFileProcessed = 0;
                 string outputFolderPath = "";
+                string filepathToProcess = "";
 
                 bool isResizeByPercent = Properties.Settings.Default.IsResizeByPercent;
                 bool isResizeByShortestDimen = Properties.Settings.Default.IsResizeByShortestDimen;
 
+                bool isHeic = false;
+
                 // Example: show file paths in MessageBox
                 foreach (string file in files)
                 {
-                    if (file.EndsWith(".png",StringComparison.InvariantCultureIgnoreCase) 
-                        || file.EndsWith(".jpg", StringComparison.InvariantCultureIgnoreCase) 
-                        || file.EndsWith(".jpeg", StringComparison.InvariantCultureIgnoreCase) 
-                        || file.EndsWith(".bmp", StringComparison.InvariantCultureIgnoreCase))
+                    filepathToProcess = file;
+
+                    if (outputFolderPath == "")
+                    {
+                        outputFolderPath = Path.Combine(Path.GetDirectoryName(file), "Output");
+                        OutputFolderPath_LastProcess = outputFolderPath;
+                    }
+
+                    if (file.EndsWith(".heic", StringComparison.InvariantCultureIgnoreCase)
+                        || file.EndsWith(".heif", StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        isHeic = true;
+                        // Convert to jpg first
+                        try
+                        {
+                            outputFolderPath = GetOutputFolderPath();
+                            string tmpJpgFilepath = ConvertHeicToDestExtension(file, ".jpg", outputFolderPath);
+
+                            filepathToProcess = tmpJpgFilepath;
+                        }
+                        catch (Exception ex)
+                        {
+                            hasError = true;
+                            sbLog.AppendLine(ex.Message);
+                            continue; // Skip further processing for this file
+                        }
+                    }
+
+                    if (filepathToProcess.EndsWith(".png",StringComparison.InvariantCultureIgnoreCase) 
+                        || filepathToProcess.EndsWith(".jpg", StringComparison.InvariantCultureIgnoreCase) 
+                        || filepathToProcess.EndsWith(".jpeg", StringComparison.InvariantCultureIgnoreCase) 
+                        || filepathToProcess.EndsWith(".bmp", StringComparison.InvariantCultureIgnoreCase))
                     {
                         try
                         {
                             // Process image file
-                            if (outputFolderPath == "")
-                            {
-                                outputFolderPath = Path.Combine(Path.GetDirectoryName(file), "Output");
-                                OutputFolderPath_LastProcess = outputFolderPath;
-                            }
-                            
                             outputFolderPath = GetOutputFolderPath();
                             numFileProcessed++;
                             if (isResizeByPercent)
                             {
-                                ResizeImageByPercent(file, outputFolderPath);
+                                ResizeImageByPercent(filepathToProcess, outputFolderPath);
                             }
                             else
                             {
-                                ResizeImageByShortestDimension(file, outputFolderPath);
+                                ResizeImageByShortestDimension(filepathToProcess, outputFolderPath);
                             }
-                            
+
+                            if (isHeic)
+                            {
+                                // Delete temporary jpg file
+                                File.Delete(filepathToProcess);
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -131,13 +165,26 @@ namespace ImageUtility
             // Execute ImageMagick command to resize image in 30%, 50%, 70%, 80%
             string resizePercentListStr = Properties.Settings.Default.PercentList;
             string[] resizePercents = resizePercentListStr.Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+            // Get JPG compression setting (if file is JPG)
+            string commandJpgCompression = "";
+            string filenameSuffix_JpgCompress = "";
+            bool enableJpgCompression = Properties.Settings.Default.IsEnableJpgCompression;
+            int jpgCompressionPercent = Properties.Settings.Default.JpgCompressionQualityPercent;
+            if (enableJpgCompression && Regex.IsMatch(Path.GetExtension(imageFilePath), @"\.jpe?g"))
+            {
+                commandJpgCompression = $"-quality {jpgCompressionPercent} ";
+                filenameSuffix_JpgCompress = $"_q{jpgCompressionPercent}";
+            }
+            
             StringBuilder sbErrorMessages = new StringBuilder();
             StringBuilder sbErrorMessagesFinal = new StringBuilder();
 
             foreach (string resizePercent in resizePercents)
             {
-                string outputFilePath = Path.Combine(outputFolderPath, Path.GetFileNameWithoutExtension(imageFilePath) + $"_{resizePercent}p" + Path.GetExtension(imageFilePath));
-                string command = $"{magickExecuteName} \"{imageFilePath}\" -resize {resizePercent}% \"{outputFilePath}\"";
+                string outputFilePath = Path.Combine(outputFolderPath, Path.GetFileNameWithoutExtension(imageFilePath) + $"_{resizePercent}p" + filenameSuffix_JpgCompress + Path.GetExtension(imageFilePath));
+                
+                string command = $"{magickExecuteName} \"{imageFilePath}\" -resize {resizePercent}% {commandJpgCompression} \"{outputFilePath}\"";
 
                 System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo
                 {
@@ -179,12 +226,24 @@ namespace ImageUtility
 
             // Execute ImageMagick command to resize shorter side to targetPx
             int targetPx = Properties.Settings.Default.ResizeShorterSideToPx;
+
+            // Get JPG compression setting (if file is JPG)
+            string commandJpgCompression = "";
+            string filenameSuffix_JpgCompress = "";
+            bool enableJpgCompression = Properties.Settings.Default.IsEnableJpgCompression;
+            int jpgCompressionPercent = Properties.Settings.Default.JpgCompressionQualityPercent;
+            if (enableJpgCompression && Regex.IsMatch(Path.GetExtension(imageFilePath), @"\.jpe?g"))
+            {
+                commandJpgCompression = $"-quality {jpgCompressionPercent} ";
+                filenameSuffix_JpgCompress = $"_q{jpgCompressionPercent}";
+            }
+
             StringBuilder sbErrorMessages = new StringBuilder();
             StringBuilder sbErrorMessagesFinal = new StringBuilder();
 
 
-            string outputFilePath = Path.Combine(outputFolderPath, Path.GetFileNameWithoutExtension(imageFilePath) + $"_{targetPx}px" + Path.GetExtension(imageFilePath));
-            string command = $"{magickExecuteName} \"{imageFilePath}\" -resize \"{targetPx}x{targetPx}^>\" \"{outputFilePath}\"";
+            string outputFilePath = Path.Combine(outputFolderPath, Path.GetFileNameWithoutExtension(imageFilePath) + $"_{targetPx}px" + filenameSuffix_JpgCompress + Path.GetExtension(imageFilePath));
+            string command = $"{magickExecuteName} \"{imageFilePath}\" -resize \"{targetPx}x{targetPx}^>\" {commandJpgCompression} \"{outputFilePath}\"";
 
             System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo
             {
@@ -290,6 +349,39 @@ namespace ImageUtility
             return outputFolderPath;
         }
 
+        private string ConvertHeicToDestExtension(string heicFilePath, string destExtension, string outputFolderPath)
+        {
+            string magickExecuteName = GetMagickCommand();
+            string filename = Path.GetFileName(heicFilePath);
+            string outputFilename = Path.ChangeExtension(filename, destExtension);
+            string outputFilePath = Path.Combine(outputFolderPath, outputFilename);
+            string command = $"{magickExecuteName} \"{heicFilePath}\" \"{outputFilePath}\"";
+
+            System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/C \"{command}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using (System.Diagnostics.Process process = System.Diagnostics.Process.Start(startInfo))
+            {
+                string output = process.StandardOutput.ReadToEnd();
+                string error = process.StandardError.ReadToEnd();
+                process.WaitForExit();
+
+                if (process.ExitCode != 0)
+                {
+                    throw new Exception($"Error converting HEIC to {destExtension}: {error}");
+                }
+            }
+
+            return outputFilePath;
+        }
+
         private void HyperlinkOpenFolder_Click(object sender, RoutedEventArgs e)
         {
             string outputFolderPath = GetOutputFolderPath();
@@ -371,6 +463,49 @@ namespace ImageUtility
             {
                 txtResizePercentList.Background = Brushes.LightPink; // Indicate invalid input
             }
+        }
+
+        private void txtJpgCompressionPercent_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!_isWindowLoaded) return;
+
+            string previousValue = Properties.Settings.Default.JpgCompressionQualityPercent.ToString();
+
+            // Validate if input is not an integer
+            if (!int.TryParse(txtJpgCompressionPercent.Text, out int percent))
+            {
+                txtJpgCompressionPercent.Background = Brushes.LightPink; // Indicate invalid input
+                return;
+            }
+
+            if (percent > 100)
+            {
+                percent = 100;
+                txtJpgCompressionPercent.Text = "100";
+            }
+
+            txtJpgCompressionPercent.Background = Brushes.White; // Reset background if valid
+
+            Properties.Settings.Default.JpgCompressionQualityPercent = percent;
+            Properties.Settings.Default.Save();
+        }
+
+        private void chkJpgCompressionPercent_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            if (!_isWindowLoaded) return;
+
+            bool isChecked = ((CheckBox)sender).IsChecked == true;
+            Properties.Settings.Default.IsEnableJpgCompression = isChecked;
+            Properties.Settings.Default.Save();
+        }
+
+        private void chkJpgCompressionPercent_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (!_isWindowLoaded) return;
+
+            bool isChecked = ((CheckBox)sender).IsChecked == true;
+            Properties.Settings.Default.IsEnableJpgCompression = isChecked;
+            Properties.Settings.Default.Save();
         }
     }
 }
